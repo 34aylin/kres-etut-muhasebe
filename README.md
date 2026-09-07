@@ -4,8 +4,8 @@ Kreş ve etüt merkezleri için gelir/gider, veli/öğrenci ve temel muhasebe he
 çoklu şube (multi-tenant) destekli, self-hosted web uygulaması.
 
 Proje planı: `kres-etut-muhasebe-plan.md`. Bu doküman **Faz 0** (proje kurulumu), **Faz 1**
-(veri modeli ve kimlik doğrulama) ve **Faz 2** (veli/öğrenci yönetimi) kapsamında oluşturulan
-altyapıyı açıklar.
+(veri modeli ve kimlik doğrulama), **Faz 2** (veli/öğrenci yönetimi) ve **Faz 3** (hesap planı
+ve gelir/gider modülü) kapsamında oluşturulan altyapıyı açıklar.
 
 ## Gereksinimler
 
@@ -65,7 +65,25 @@ oluşturabilir/düzenleyebilir/silebilir. TEACHER rolü bu verileri yalnızca g�
 (`src/app/(app)/parents/actions.ts`, `students/actions.ts`) sunucu tarafında
 `canManageRecords()` ile bu kısıtı zorunlu kılar.
 
-## Script'ler
+## Ekranlar (Faz 3)
+
+- **`/accounts`** — Kasa/Banka hesapları (bakiye gösterimi ile) ve Gelir/Gider kategorileri
+  yönetimi (iki sekme). Hesap/kategori silinmez, geçmişi bozmamak için pasifleştirilir.
+- **`/transactions`** — Tüm gelir/gider hareketlerinin listesi (tür filtresi + sayfalama) ve
+  yeni hareket girişi (kasa/banka hesabı, kategori, opsiyonel veli/öğrenci, ödeme yöntemi).
+- **`/parents/[id]`** — Veli detayı: toplam tahakkuk/ödenen/kalan borç özeti, ücret planları
+  (taksitli aidat — oluşturduğunuzda taksit sayısı kadar borç kaydı otomatik üretilir) ve
+  borç/tahsilat dökümü (her borç satırından "Tahsilat Al" ile ödeme kaydedilir).
+
+**Hesap bakiyeleri ve borç durumu saklanmaz, anlık hesaplanır:** Bir kasa/banka hesabının
+bakiyesi = o hesaba bağlı gelir hareketleri toplamı − gider hareketleri toplamı. Bir borcun
+kalan tutarı = borç tutarı − o borca bağlı tahsilatların toplamı. Bu sayede bakiye/borç
+tutarsızlığı (drift) riski olmaz; her sorgu güncel veriden hesaplanır.
+
+**Veli bazlı borç takibi:** `Charge` (tahakkuk/borç) ile `Transaction` (gerçekleşen
+tahsilat/ödeme) ayrı kavramlardır. `FeePlan` bir taksit planı tanımlar ve oluşturulduğunda
+`installmentCount` kadar `Charge` kaydı otomatik üretir (örn. "10 taksit x 500₺ aylık aidat" →
+10 ayrı borç kaydı, her biri bir sonraki ayın aynı gününde vadeli).
 
 | Komut                | Açıklama                                             |
 | -------------------- | ---------------------------------------------------- |
@@ -97,5 +115,5 @@ oluşturabilir/düzenleyebilir/silebilir. TEACHER rolü bu verileri yalnızca g�
 
 ## Kapsam Dışı (sonraki fazlar)
 
-Hesap planı ve gelir/gider modülü (Faz 3), raporlama (Faz 4), güvenlik sertleştirme (Faz 5),
-production Docker paketleme (Faz 6) — detaylar için `kres-etut-muhasebe-plan.md`.
+Raporlama ve dashboard (Faz 4), güvenlik sertleştirme (Faz 5), production Docker paketleme
+(Faz 6) — detaylar için `kres-etut-muhasebe-plan.md`.

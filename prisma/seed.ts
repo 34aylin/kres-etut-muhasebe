@@ -2,6 +2,10 @@ import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { hashPassword } from "../src/lib/password";
+import {
+  DEFAULT_ACCOUNTS,
+  DEFAULT_CATEGORIES,
+} from "../src/lib/default-chart-of-accounts";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -92,6 +96,103 @@ async function seedTenant(tenant: (typeof TENANTS)[number]) {
       studentId: demoStudent.id,
       parentId: demoParent.id,
       relation: "anne",
+    },
+  });
+
+  // Varsayılan hesap planı: Kasa/Banka hesapları + gelir/gider kategorileri.
+  const accountsByName = new Map<string, string>();
+  for (const [index, account] of DEFAULT_ACCOUNTS.entries()) {
+    const id = `demo-account-${index}-${tenant.slug}`;
+    await prisma.account.upsert({
+      where: { id },
+      update: {},
+      create: {
+        id,
+        tenantId: createdTenant.id,
+        name: account.name,
+        type: account.type,
+      },
+    });
+    accountsByName.set(account.name, id);
+  }
+
+  const categoriesByName = new Map<string, string>();
+  for (const [index, category] of DEFAULT_CATEGORIES.entries()) {
+    const id = `demo-category-${index}-${tenant.slug}`;
+    await prisma.category.upsert({
+      where: { id },
+      update: {},
+      create: {
+        id,
+        tenantId: createdTenant.id,
+        name: category.name,
+        type: category.type,
+      },
+    });
+    categoriesByName.set(category.name, id);
+  }
+
+  // Demo aidat planı: 3 taksit x 500 TL, ilk taksit tahsil edilmiş.
+  const feePlanId = `demo-feeplan-${tenant.slug}`;
+  const aidatCategoryId = categoriesByName.get("Aidat Geliri")!;
+  const kasaAccountId = accountsByName.get("Kasa")!;
+  const startDate = new Date(Date.UTC(2026, 8, 1));
+
+  await prisma.feePlan.upsert({
+    where: { id: feePlanId },
+    update: {},
+    create: {
+      id: feePlanId,
+      tenantId: createdTenant.id,
+      studentId: demoStudent.id,
+      parentId: demoParent.id,
+      categoryId: aidatCategoryId,
+      name: "2026-2027 Aylık Aidat",
+      installmentAmount: 500,
+      installmentCount: 3,
+      startDate,
+    },
+  });
+
+  const chargeIds: string[] = [];
+  for (let i = 0; i < 3; i++) {
+    const dueDate = new Date(Date.UTC(2026, 8 + i, 1));
+    const chargeId = `demo-charge-${i}-${tenant.slug}`;
+    await prisma.charge.upsert({
+      where: { id: chargeId },
+      update: {},
+      create: {
+        id: chargeId,
+        tenantId: createdTenant.id,
+        studentId: demoStudent.id,
+        parentId: demoParent.id,
+        categoryId: aidatCategoryId,
+        feePlanId,
+        amount: 500,
+        dueDate,
+        description: `${dueDate.toLocaleString("tr-TR", { month: "long", year: "numeric" })} aidatı`,
+      },
+    });
+    chargeIds.push(chargeId);
+  }
+
+  // İlk taksit tahsil edilmiş gösterilir.
+  await prisma.transaction.upsert({
+    where: { id: `demo-payment-0-${tenant.slug}` },
+    update: {},
+    create: {
+      id: `demo-payment-0-${tenant.slug}`,
+      tenantId: createdTenant.id,
+      type: "INCOME",
+      amount: 500,
+      date: startDate,
+      accountId: kasaAccountId,
+      categoryId: aidatCategoryId,
+      studentId: demoStudent.id,
+      parentId: demoParent.id,
+      chargeId: chargeIds[0],
+      paymentMethod: "CASH",
+      description: "Eylül aidatı tahsilatı",
     },
   });
 

@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 
 import { auth } from "@/auth";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -16,6 +18,7 @@ import { PaginationControls } from "@/components/shared/pagination-controls";
 import { DeleteConfirmButton } from "@/components/shared/delete-confirm-button";
 import { forTenant } from "@/lib/tenant-db";
 import { canManageRecords } from "@/lib/roles";
+import { formatMoney } from "@/lib/money";
 import { ParentFormDialog } from "./parent-form-dialog";
 import { deleteParent } from "./actions";
 
@@ -59,6 +62,38 @@ export default async function ParentsPage({
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  const parentIds = parents.map((p) => p.id);
+  const [chargedSums, paidSums] = await Promise.all([
+    db.charge.groupBy({
+      by: ["parentId"],
+      where: { parentId: { in: parentIds } },
+      _sum: { amount: true },
+    }),
+    db.transaction.groupBy({
+      by: ["parentId"],
+      where: {
+        parentId: { in: parentIds },
+        type: "INCOME",
+        chargeId: { not: null },
+      },
+      _sum: { amount: true },
+    }),
+  ]);
+  const chargedByParent = new Map(
+    chargedSums.map((row) => [row.parentId, Number(row._sum.amount ?? 0)]),
+  );
+  const paidByParent = new Map(
+    paidSums.map((row) => [
+      row.parentId as string,
+      Number(row._sum.amount ?? 0),
+    ]),
+  );
+  function debtOf(parentId: string) {
+    return (
+      (chargedByParent.get(parentId) ?? 0) - (paidByParent.get(parentId) ?? 0)
+    );
+  }
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
@@ -84,6 +119,7 @@ export default async function ParentsPage({
               <TableHead>Telefon</TableHead>
               <TableHead>E-posta</TableHead>
               <TableHead>Öğrenciler</TableHead>
+              <TableHead>Borç</TableHead>
               {canManage && (
                 <TableHead className="text-right">İşlemler</TableHead>
               )}
@@ -93,7 +129,7 @@ export default async function ParentsPage({
             {parents.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={canManage ? 5 : 4}
+                  colSpan={canManage ? 6 : 5}
                   className="text-center text-muted-foreground"
                 >
                   Kayıt bulunamadı.
@@ -103,7 +139,12 @@ export default async function ParentsPage({
             {parents.map((parent) => (
               <TableRow key={parent.id}>
                 <TableCell>
-                  {parent.firstName} {parent.lastName}
+                  <Link
+                    href={`/parents/${parent.id}`}
+                    className="font-medium underline"
+                  >
+                    {parent.firstName} {parent.lastName}
+                  </Link>
                 </TableCell>
                 <TableCell>{parent.phone ?? "—"}</TableCell>
                 <TableCell>{parent.email ?? "—"}</TableCell>
@@ -116,6 +157,15 @@ export default async function ParentsPage({
                             `${sp.student.firstName} ${sp.student.lastName}`,
                         )
                         .join(", ")}
+                </TableCell>
+                <TableCell>
+                  {debtOf(parent.id) > 0 ? (
+                    <Badge variant="outline" className="text-red-600">
+                      {formatMoney(debtOf(parent.id))}
+                    </Badge>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </TableCell>
                 {canManage && (
                   <TableCell className="flex justify-end gap-2">

@@ -21,6 +21,10 @@ type DeleteConfirmButtonProps = {
   description: string;
   onConfirm: () => Promise<void>;
   trigger: React.ReactElement;
+  confirmLabel?: string;
+  pendingLabel?: string;
+  successMessage?: string;
+  errorMessage?: string;
 };
 
 export function DeleteConfirmButton({
@@ -28,6 +32,10 @@ export function DeleteConfirmButton({
   description,
   onConfirm,
   trigger,
+  confirmLabel = "Sil",
+  pendingLabel = "Siliniyor...",
+  successMessage = "Silindi",
+  errorMessage = "Silinemedi",
 }: DeleteConfirmButtonProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -36,10 +44,10 @@ export function DeleteConfirmButton({
     startTransition(async () => {
       try {
         await onConfirm();
-        toast.success("Silindi");
+        toast.success(successMessage);
         router.refresh();
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Silinemedi");
+        toast.error(error instanceof Error ? error.message : errorMessage);
       }
     });
   }
@@ -55,7 +63,7 @@ export function DeleteConfirmButton({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isPending}>Vazgeç</AlertDialogCancel>
           <AlertDialogAction disabled={isPending} onClick={handleConfirm}>
-            {isPending ? "Siliniyor..." : "Sil"}
+            {isPending ? pendingLabel : confirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

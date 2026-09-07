@@ -10,6 +10,11 @@ const TENANT_SCOPED_MODELS = new Set([
   "Student",
   "StudentParent",
   "Enrollment",
+  "Account",
+  "Category",
+  "Transaction",
+  "Charge",
+  "FeePlan",
   "AuditLog",
 ]);
 
