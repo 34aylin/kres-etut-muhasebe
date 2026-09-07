@@ -1,0 +1,192 @@
+{
+  "info": {
+    "name": "Kreş & Etüt Muhasebe",
+    "description": "Kreş & Etüt Merkezi Muhasebe uygulamasının API endpoint'lerini test etmek için hazır koleksiyon. Uygulamanın çoğu işlemi (veli/öğrenci/işlem CRUD) Next.js Server Actions ile yapıldığı için bunlar bu koleksiyona dahil değildir; burada test edilebilen gerçek REST/HTTP uç noktaları yer alır: kimlik doğrulama, sağlık kontrolü ve rapor CSV export'ları.\n\nKullanım: 'Giriş' klasöründeki istekleri sırayla (1, 2, 3) çalıştırın — CSRF token otomatik yakalanır ve oturum cookie'si Postman tarafından saklanır. Ardından diğer klasörlerdeki istekler aynı oturumla çalışır.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3010", "type": "string" },
+    { "key": "csrfToken", "value": "", "type": "string" },
+    { "key": "demoEmail", "value": "muhasebe@merkez-sube.test", "type": "string" },
+    { "key": "demoPassword", "value": "Demo1234!", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Giriş",
+      "item": [
+        {
+          "name": "1. CSRF Token Al",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/csrf",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "csrf"]
+            },
+            "description": "NextAuth'un CSRF korumasını geçmek için gereken token'ı alır. Test script'i bunu otomatik olarak `csrfToken` koleksiyon değişkenine kaydeder."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('csrfToken', json.csrfToken);",
+                  "pm.test('csrfToken alındı', () => pm.expect(json.csrfToken).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Giriş Yap (Login)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "email", "value": "{{demoEmail}}", "type": "text" },
+                { "key": "password", "value": "{{demoPassword}}", "type": "text" },
+                { "key": "csrfToken", "value": "{{csrfToken}}", "type": "text" },
+                { "key": "redirect", "value": "false", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/callback/credentials",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "callback", "credentials"]
+            },
+            "description": "E-posta/şifre ile giriş yapar. Başarılıysa oturum cookie'si Postman'in cookie jar'ına kaydedilir ve sonraki isteklerde otomatik gönderilir."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Giriş isteği kabul edildi (302 veya 200)', () => {",
+                  "  pm.expect([200, 302]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Oturum Bilgisi (Session)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/session",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "session"]
+            },
+            "description": "Aktif oturumun kullanıcı bilgilerini (isim, e-posta, rol, tenantId, tenantSlug) döner. Giriş başarılıysa boş olmamalı."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "pm.test('Oturum dolu (giriş başarılı)', () => pm.expect(json.user).to.exist);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Çıkış Yap (Logout)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "csrfToken", "value": "{{csrfToken}}", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/signout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "signout"]
+            },
+            "description": "Oturumu kapatır. Not: NextAuth signout, CSRF token'ın hâlâ geçerli (aynı istek dizisinden) olmasını bekler."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Sağlık Kontrolü",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Kimlik doğrulama gerektirmez. Uygulamanın ve veritabanı bağlantısının ayakta olduğunu doğrular."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 ve status:ok', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('ok');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Raporlar (ADMIN/ACCOUNTANT gerektirir)",
+      "item": [
+        {
+          "name": "Veli Borç Listesi (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/reports/debts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reports", "debts"]
+            },
+            "description": "Bekleyen borcu olan tüm velilerin CSV listesi. 'Giriş' klasöründeki istekler önce çalıştırılmalı."
+          }
+        },
+        {
+          "name": "Gelir/Gider Hareketleri (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/reports/transactions?from=2026-09-01&to=2026-09-30",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "reports", "transactions"],
+              "query": [
+                { "key": "from", "value": "2026-09-01" },
+                { "key": "to", "value": "2026-09-30" }
+              ]
+            },
+            "description": "Belirtilen tarih aralığındaki gelir/gider hareketlerinin CSV'si. `type=INCOME` veya `type=EXPENSE` query parametresiyle filtrelenebilir."
+          }
+        }
+      ]
+    }
+  ]
+}
