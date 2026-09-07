@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { signIn } from "next-auth/react";
@@ -29,7 +29,6 @@ const loginSchema = z.object({
 type LoginFormValues = z.infer<typeof loginSchema>;
 
 export function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/";
   const [formError, setFormError] = useState<string | null>(null);
@@ -55,8 +54,12 @@ export function LoginForm() {
       return;
     }
 
-    router.push(callbackUrl);
-    router.refresh();
+    // Next.js'in istemci taraflı router cache'i, önceki oturumdan kalan bir
+    // sayfayı (örn. farklı bir rol için render edilmiş bir liste) yeni
+    // oturumda da gösterebiliyor. Giriş gibi kimlik değişen bir anda
+    // `router.push` yerine tam sayfa yenilemesi yaparak bu riski ortadan
+    // kaldırıyoruz.
+    window.location.assign(callbackUrl);
   }
 
   return (
