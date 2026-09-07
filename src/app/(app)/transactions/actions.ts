@@ -9,6 +9,7 @@ import {
   type TenantPrismaClient,
 } from "@/lib/tenant-db";
 import { canManageRecords } from "@/lib/roles";
+import { recordAudit } from "@/lib/audit";
 import {
   transactionSchema,
   type TransactionFormValues,
@@ -86,8 +87,21 @@ export async function createTransaction(values: TransactionFormValues) {
   const data = toData(values);
   await assertReferencesOwnedByTenant(db, data);
 
-  await db.transaction.create({
+  const created = await db.transaction.create({
     data: { ...data, tenantId: user.tenantId },
+  });
+
+  await recordAudit({
+    tenantId: user.tenantId,
+    userId: user.id,
+    action: "CREATE",
+    entityType: "Transaction",
+    entityId: created.id,
+    metadata: {
+      type: data.type,
+      amount: data.amount,
+      description: data.description,
+    },
   });
 
   revalidatePath("/transactions");
@@ -108,6 +122,15 @@ export async function updateTransaction(
     data,
   });
 
+  await recordAudit({
+    tenantId: user.tenantId,
+    userId: user.id,
+    action: "UPDATE",
+    entityType: "Transaction",
+    entityId: id,
+    metadata: { type: data.type, amount: data.amount },
+  });
+
   revalidatePath("/transactions");
   revalidatePath("/accounts");
 }
@@ -115,8 +138,21 @@ export async function updateTransaction(
 export async function deleteTransaction(id: string) {
   const user = await requireManager();
 
-  await forTenant(user.tenantId).transaction.delete({
+  const deleted = await forTenant(user.tenantId).transaction.delete({
     where: { id },
+  });
+
+  await recordAudit({
+    tenantId: user.tenantId,
+    userId: user.id,
+    action: "DELETE",
+    entityType: "Transaction",
+    entityId: id,
+    metadata: {
+      type: deleted.type,
+      amount: Number(deleted.amount),
+      description: deleted.description,
+    },
   });
 
   revalidatePath("/transactions");

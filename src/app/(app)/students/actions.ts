@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { assertOwnedByTenant, forTenant } from "@/lib/tenant-db";
 import { canManageRecords } from "@/lib/roles";
+import { recordAudit } from "@/lib/audit";
 import {
   parentLinkSchema,
   studentSchema,
@@ -64,6 +65,15 @@ export async function createStudent(values: StudentFormValues) {
     });
   }
 
+  await recordAudit({
+    tenantId: user.tenantId,
+    userId: user.id,
+    action: "CREATE",
+    entityType: "Student",
+    entityId: student.id,
+    metadata: { firstName: student.firstName, lastName: student.lastName },
+  });
+
   revalidatePath("/students");
   return student.id;
 }
@@ -98,8 +108,17 @@ export async function deleteStudent(id: string) {
     );
   }
 
-  await db.student.delete({
+  const deleted = await db.student.delete({
     where: { id },
+  });
+
+  await recordAudit({
+    tenantId: user.tenantId,
+    userId: user.id,
+    action: "DELETE",
+    entityType: "Student",
+    entityId: id,
+    metadata: { firstName: deleted.firstName, lastName: deleted.lastName },
   });
 
   revalidatePath("/students");

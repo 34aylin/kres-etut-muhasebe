@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { assertOwnedByTenant, forTenant } from "@/lib/tenant-db";
 import { canManageRecords } from "@/lib/roles";
+import { recordAudit } from "@/lib/audit";
 import {
   feePlanSchema,
   type FeePlanFormValues,
@@ -83,6 +84,19 @@ export async function createFeePlan(
 
   await db.charge.createMany({ data: charges });
 
+  await recordAudit({
+    tenantId: user.tenantId,
+    userId: user.id,
+    action: "CREATE",
+    entityType: "FeePlan",
+    entityId: feePlan.id,
+    metadata: {
+      name: parsed.name,
+      installmentAmount: parsed.installmentAmount,
+      installmentCount: parsed.installmentCount,
+    },
+  });
+
   revalidatePath(`/parents/${parsed.parentId}`);
   revalidatePath(`/students/${studentId}`);
 }
@@ -100,8 +114,20 @@ export async function deleteFeePlan(feePlanId: string, parentId: string) {
     );
   }
 
+  const feePlan = await db.feePlan.findUniqueOrThrow({
+    where: { id: feePlanId },
+  });
   await db.charge.deleteMany({ where: { feePlanId } });
   await db.feePlan.delete({ where: { id: feePlanId } });
+
+  await recordAudit({
+    tenantId: user.tenantId,
+    userId: user.id,
+    action: "DELETE",
+    entityType: "FeePlan",
+    entityId: feePlanId,
+    metadata: { name: feePlan.name },
+  });
 
   revalidatePath(`/parents/${parentId}`);
 }
@@ -115,7 +141,19 @@ export async function deleteCharge(chargeId: string, parentId: string) {
     throw new Error("Bu tahakkuka ait tahsilat var; önce onu kaldırın.");
   }
 
-  await db.charge.delete({ where: { id: chargeId } });
+  const charge = await db.charge.delete({ where: { id: chargeId } });
+
+  await recordAudit({
+    tenantId: user.tenantId,
+    userId: user.id,
+    action: "DELETE",
+    entityType: "Charge",
+    entityId: chargeId,
+    metadata: {
+      amount: Number(charge.amount),
+      description: charge.description,
+    },
+  });
 
   revalidatePath(`/parents/${parentId}`);
 }
@@ -150,7 +188,7 @@ export async function recordPayment(
     );
   }
 
-  await db.transaction.create({
+  const payment = await db.transaction.create({
     data: {
       tenantId: user.tenantId,
       type: "INCOME",
@@ -164,6 +202,15 @@ export async function recordPayment(
       paymentMethod: parsed.paymentMethod,
       description: parsed.description || null,
     },
+  });
+
+  await recordAudit({
+    tenantId: user.tenantId,
+    userId: user.id,
+    action: "CREATE",
+    entityType: "Transaction",
+    entityId: payment.id,
+    metadata: { type: "INCOME", amount: parsed.amount, chargeId: charge.id },
   });
 
   revalidatePath(`/parents/${parentId}`);

@@ -4,7 +4,10 @@ export const feePlanSchema = z.object({
   name: z.string().min(1, "Plan adı zorunludur").max(150),
   parentId: z.string().min(1, "Veli seçin"),
   categoryId: z.string().optional().or(z.literal("")),
-  installmentAmount: z.number().positive("Taksit tutarı 0'dan büyük olmalıdır"),
+  installmentAmount: z
+    .number()
+    .positive("Taksit tutarı 0'dan büyük olmalıdır")
+    .max(99_999_999.99, "Tutar çok büyük"),
   installmentCount: z
     .number()
     .int()

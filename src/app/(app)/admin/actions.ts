@@ -5,6 +5,9 @@ import { z } from "zod";
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { forTenant } from "@/lib/tenant-db";
+import { recordAudit } from "@/lib/audit";
+import { resetLoginAttempts } from "@/lib/login-attempts";
 
 const tenantSchema = z.object({
   name: z.string().min(1, "Şube adı zorunludur").max(200),
@@ -27,4 +30,28 @@ export async function updateTenantName(name: string) {
   });
 
   revalidatePath("/admin/sube");
+}
+
+export async function unlockUser(userId: string) {
+  const session = await auth();
+  const user = session?.user;
+  if (!user) throw new Error("Oturum bulunamadı");
+  if (user.role !== "ADMIN") throw new Error("Bu işlem için yetkiniz yok");
+
+  const db = forTenant(user.tenantId);
+  await db.user.update({
+    where: { id: userId },
+    data: resetLoginAttempts(),
+  });
+
+  await recordAudit({
+    tenantId: user.tenantId,
+    userId: user.id,
+    action: "UPDATE",
+    entityType: "User",
+    entityId: userId,
+    metadata: { reason: "manual_unlock" },
+  });
+
+  revalidatePath("/admin");
 }

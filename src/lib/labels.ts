@@ -1,5 +1,6 @@
 import type {
   AccountType,
+  AuditAction,
   CategoryType,
   PaymentMethod,
   ProgramType,
@@ -37,4 +38,11 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   CASH: "Nakit",
   BANK_TRANSFER: "Havale/EFT",
   CARD: "Kart",
+};
+
+export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
+  CREATE: "Oluşturuldu",
+  UPDATE: "Güncellendi",
+  DELETE: "Silindi",
+  LOGIN: "Giriş Yapıldı",
 };

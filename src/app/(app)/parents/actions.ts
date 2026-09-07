@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { forTenant } from "@/lib/tenant-db";
 import { canManageRecords } from "@/lib/roles";
+import { recordAudit } from "@/lib/audit";
 import { parentSchema, type ParentFormValues } from "@/lib/validations/parent";
 
 async function requireManager() {
@@ -33,8 +34,17 @@ export async function createParent(values: ParentFormValues) {
   // `forTenant` tenantId'yi runtime'da otomatik enjekte eder; burada da
   // açıkça veriyoruz çünkü Prisma'nın üretilen create tipi tenantId'yi
   // zorunlu kılıyor (extension bunu tip seviyesinde yansıtmıyor).
-  await forTenant(user.tenantId).parent.create({
+  const created = await forTenant(user.tenantId).parent.create({
     data: { ...normalize(parsed), tenantId: user.tenantId },
+  });
+
+  await recordAudit({
+    tenantId: user.tenantId,
+    userId: user.id,
+    action: "CREATE",
+    entityType: "Parent",
+    entityId: created.id,
+    metadata: { firstName: created.firstName, lastName: created.lastName },
   });
 
   revalidatePath("/parents");
@@ -69,8 +79,17 @@ export async function deleteParent(id: string) {
     );
   }
 
-  await db.parent.delete({
+  const deleted = await db.parent.delete({
     where: { id },
+  });
+
+  await recordAudit({
+    tenantId: user.tenantId,
+    userId: user.id,
+    action: "DELETE",
+    entityType: "Parent",
+    entityId: id,
+    metadata: { firstName: deleted.firstName, lastName: deleted.lastName },
   });
 
   revalidatePath("/parents");

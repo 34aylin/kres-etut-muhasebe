@@ -4,6 +4,12 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/password";
+import { recordAudit } from "@/lib/audit";
+import {
+  isLockedOut,
+  recordFailedAttempt,
+  resetLoginAttempts,
+} from "@/lib/login-attempts";
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -35,8 +41,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         if (!user || !user.isActive) return null;
 
+        // Hesap, çok sayıda başarısız denemeden sonra geçici olarak
+        // kilitlenmiş olabilir. Kullanıcı sayısı taraması (enumeration)
+        // riskini azaltmak için burada da genel "giriş başarısız" davranışı
+        // korunur — kilitli olduğu ayrıca belirtilmez.
+        if (isLockedOut(user.lockedUntil)) return null;
+
         const isValid = await verifyPassword(password, user.passwordHash);
-        if (!isValid) return null;
+        if (!isValid) {
+          const next = recordFailedAttempt(user.failedLoginAttempts);
+          await prisma.user.update({ where: { id: user.id }, data: next });
+          return null;
+        }
+
+        await prisma.user.update({
+          where: { id: user.id },
+          data: resetLoginAttempts(),
+        });
+        await recordAudit({
+          tenantId: user.tenantId,
+          userId: user.id,
+          action: "LOGIN",
+          entityType: "User",
+          entityId: user.id,
+        });
 
         return {
           id: user.id,

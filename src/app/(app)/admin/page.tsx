@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/table";
 import { forTenant } from "@/lib/tenant-db";
 import { ROLE_LABELS } from "@/lib/roles";
+import { isLockedOut } from "@/lib/login-attempts";
+import { UnlockUserButton } from "./unlock-user-button";
 
 export default async function AdminPage() {
   const session = await auth();
@@ -39,9 +41,14 @@ export default async function AdminPage() {
           tenant&apos;a ait kullanıcıları listeler (tenant izolasyon
           doğrulaması).
         </CardDescription>
-        <Link href="/admin/sube" className="text-sm text-primary underline">
-          Şube ayarlarını düzenle →
-        </Link>
+        <div className="flex gap-4">
+          <Link href="/admin/sube" className="text-sm text-primary underline">
+            Şube ayarlarını düzenle →
+          </Link>
+          <Link href="/admin/audit" className="text-sm text-primary underline">
+            Denetim kaydını görüntüle →
+          </Link>
+        </div>
       </CardHeader>
       <CardContent>
         <Table>
@@ -51,21 +58,38 @@ export default async function AdminPage() {
               <TableHead>E-posta</TableHead>
               <TableHead>Rol</TableHead>
               <TableHead>Durum</TableHead>
+              <TableHead className="text-right">İşlemler</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {tenantUsers.map((tenantUser) => (
-              <TableRow key={tenantUser.id}>
-                <TableCell>{tenantUser.name}</TableCell>
-                <TableCell>{tenantUser.email}</TableCell>
-                <TableCell>
-                  <Badge variant="secondary">
-                    {ROLE_LABELS[tenantUser.role]}
-                  </Badge>
-                </TableCell>
-                <TableCell>{tenantUser.isActive ? "Aktif" : "Pasif"}</TableCell>
-              </TableRow>
-            ))}
+            {tenantUsers.map((tenantUser) => {
+              const locked = isLockedOut(tenantUser.lockedUntil);
+              return (
+                <TableRow key={tenantUser.id}>
+                  <TableCell>{tenantUser.name}</TableCell>
+                  <TableCell>{tenantUser.email}</TableCell>
+                  <TableCell>
+                    <Badge variant="secondary">
+                      {ROLE_LABELS[tenantUser.role]}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {!tenantUser.isActive ? (
+                      "Pasif"
+                    ) : locked ? (
+                      <Badge variant="outline" className="text-red-600">
+                        Kilitli
+                      </Badge>
+                    ) : (
+                      "Aktif"
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {locked && <UnlockUserButton userId={tenantUser.id} />}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </CardContent>
