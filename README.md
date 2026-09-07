@@ -4,8 +4,9 @@ Kreş ve etüt merkezleri için gelir/gider, veli/öğrenci ve temel muhasebe he
 çoklu şube (multi-tenant) destekli, self-hosted web uygulaması.
 
 Proje planı: `kres-etut-muhasebe-plan.md`. Bu doküman **Faz 0** (proje kurulumu), **Faz 1**
-(veri modeli ve kimlik doğrulama), **Faz 2** (veli/öğrenci yönetimi) ve **Faz 3** (hesap planı
-ve gelir/gider modülü) kapsamında oluşturulan altyapıyı açıklar.
+(veri modeli ve kimlik doğrulama), **Faz 2** (veli/öğrenci yönetimi), **Faz 3** (hesap planı
+ve gelir/gider modülü) ve **Faz 4** (raporlama ve dashboard) kapsamında oluşturulan altyapıyı
+açıklar.
 
 ## Gereksinimler
 
@@ -85,6 +86,34 @@ tahsilat/ödeme) ayrı kavramlardır. `FeePlan` bir taksit planı tanımlar ve o
 `installmentCount` kadar `Charge` kaydı otomatik üretir (örn. "10 taksit x 500₺ aylık aidat" →
 10 ayrı borç kaydı, her biri bir sonraki ayın aynı gününde vadeli).
 
+## Ekranlar (Faz 4)
+
+- **`/reports`** — Tarih aralığı seçimi (Bu Ay / Bu Yıl / özel), seçili aralık için toplam
+  gelir/gider/net (kâr-zarar), son 12 ayın gelir-gider trend grafiği, gelir ve gider
+  kategorilerine göre kırılım, kasa/banka bakiye raporu, veli borç/alacak listesi. Gelir/gider
+  hareketleri ve borç listesi CSV olarak dışa aktarılabilir (Excel uyumlu, UTF-8 BOM'lu).
+  Sadece ADMIN ve ACCOUNTANT erişebilir (hem sayfa hem `/api/reports/*` uç noktaları sunucu
+  tarafında da bu kısıtı zorunlu kılar).
+
+## Güvenlik Notları
+
+Faz 3 sonrasında yapılan bir güvenlik incelemesinde, `forTenant()`'ın yalnızca bir sorgunun
+kendi `tenantId` alanını filtrelediği, formdan gelen yabancı anahtar ID'lerinin (`parentId`,
+`accountId` vb.) çağıranın tenant'ına ait olup olmadığını doğrulamadığı bulundu — bu, bir
+kullanıcının başka bir şubenin kaydına referans verip verisini görüntüleyebilmesine izin
+veriyordu. `src/lib/tenant-db.ts` içindeki `assertOwnedByTenant()` ile kapatıldı ve
+`src/lib/tenant-db.test.ts` içinde gerçek bir veritabanına karşı regresyon testi eklendi.
+Yeni bir server action yazarken, istemciden gelen ve başka bir modele referans veren her ID
+kullanılmadan önce bu fonksiyonla doğrulanmalıdır.
+
+## Test Kapsamı
+
+`npm run test` ile çalışan testler: şifre hash'leme, rol yetkilendirmesi, borç hesaplama
+mantığı (`src/lib/debt.ts`), rapor hesaplamaları (`src/lib/reports.ts`), CSV üretimi ve
+**gerçek bir veritabanına karşı çalışan multi-tenant izolasyon testi**
+(`src/lib/tenant-db.test.ts` — bu testin çalışması için `DATABASE_URL`'in erişilebilir bir
+Postgres'e işaret etmesi gerekir, örn. `docker compose up -d postgres`).
+
 | Komut                | Açıklama                                             |
 | -------------------- | ---------------------------------------------------- |
 | `npm run dev`        | Geliştirme sunucusu                                  |
@@ -115,5 +144,9 @@ tahsilat/ödeme) ayrı kavramlardır. `FeePlan` bir taksit planı tanımlar ve o
 
 ## Kapsam Dışı (sonraki fazlar)
 
-Raporlama ve dashboard (Faz 4), güvenlik sertleştirme (Faz 5), production Docker paketleme
-(Faz 6) — detaylar için `kres-etut-muhasebe-plan.md`.
+Güvenlik sertleştirme — rate limiting, brute-force koruması, audit log ekranı (Faz 5),
+production Docker paketleme (Faz 6) — detaylar için `kres-etut-muhasebe-plan.md`.
+
+Not: Faz 4'teki "şube bazlı kırılım" maddesi kapsam dışı bırakıldı — sistemde her ADMIN
+sadece kendi şubesini yönetir, çapraz-şube karşılaştırma yapacak bir platform/süper-admin
+rolü şu an tanımlı değil.
