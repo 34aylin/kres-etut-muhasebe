@@ -12,6 +12,7 @@ const NAV_ITEMS: Array<{ href: string; label: string; roles?: UserRole[] }> = [
   { href: "/students", label: "Öğrenciler" },
   { href: "/transactions", label: "Gelir/Gider" },
   { href: "/accounts", label: "Hesaplar" },
+  { href: "/reports", label: "Raporlar", roles: ["ADMIN", "ACCOUNTANT"] },
   { href: "/admin", label: "Yönetici Paneli", roles: ["ADMIN"] },
 ];
 
