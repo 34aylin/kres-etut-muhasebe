@@ -24,6 +24,7 @@ import { DeleteConfirmButton } from "@/components/shared/delete-confirm-button";
 import { forTenant } from "@/lib/tenant-db";
 import { canManageRecords } from "@/lib/roles";
 import { formatMoney } from "@/lib/money";
+import { computeChargeSummary, computeParentDebtSummary } from "@/lib/debt";
 import { FeePlanFormDialog } from "../fee-plan-form-dialog";
 import { RecordPaymentDialog } from "../record-payment-dialog";
 import { deleteCharge, deleteFeePlan } from "../finance-actions";
@@ -46,42 +47,34 @@ export default async function ParentDetailPage({
 
   if (!parent) notFound();
 
-  const [charges, feePlans, accounts, incomeCategories, paidTotal] =
-    await Promise.all([
-      db.charge.findMany({
-        where: { parentId: id },
-        orderBy: { dueDate: "asc" },
-        include: { student: true, payments: true },
-      }),
-      db.feePlan.findMany({
-        where: { parentId: id },
-        orderBy: { createdAt: "desc" },
-      }),
-      db.account.findMany({
-        where: { isActive: true },
-        orderBy: { name: "asc" },
-      }),
-      db.category.findMany({
-        where: { isActive: true, type: "INCOME" },
-        orderBy: { name: "asc" },
-      }),
-      db.transaction.aggregate({
-        where: { parentId: id, type: "INCOME" },
-        _sum: { amount: true },
-      }),
-    ]);
+  const [charges, feePlans, accounts, incomeCategories] = await Promise.all([
+    db.charge.findMany({
+      where: { parentId: id },
+      orderBy: { dueDate: "asc" },
+      // Sadece INCOME tipli hareketler "tahsilat" sayılır — bir ödeme
+      // kaydı sonradan /transactions üzerinden GİDER'e çevrilse bile borç
+      // hesaplaması bundan etkilenmesin diye burada filtreliyoruz.
+      include: { student: true, payments: { where: { type: "INCOME" } } },
+    }),
+    db.feePlan.findMany({
+      where: { parentId: id },
+      orderBy: { createdAt: "desc" },
+    }),
+    db.account.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+    }),
+    db.category.findMany({
+      where: { isActive: true, type: "INCOME" },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
-  const totalCharged = charges.reduce(
-    (sum, charge) => sum + Number(charge.amount),
-    0,
-  );
-  const totalPaidAgainstCharges = charges.reduce(
-    (sum, charge) =>
-      sum + charge.payments.reduce((s, p) => s + Number(p.amount), 0),
-    0,
-  );
-  const remainingDebt = totalCharged - totalPaidAgainstCharges;
-  const totalPaidOverall = Number(paidTotal._sum.amount ?? 0);
+  const {
+    totalCharged,
+    totalPaid: totalPaidAgainstCharges,
+    remainingDebt,
+  } = computeParentDebtSummary(charges);
 
   const studentOptions = parent.students.map((sp) => ({
     id: sp.student.id,
@@ -119,9 +112,9 @@ export default async function ParentDetailPage({
             <p className="text-lg font-semibold">{formatMoney(totalCharged)}</p>
           </div>
           <div className="rounded-lg border p-3">
-            <p className="text-muted-foreground">Toplam Ödenen</p>
+            <p className="text-muted-foreground">Toplam Tahsilat</p>
             <p className="text-lg font-semibold text-emerald-600">
-              {formatMoney(totalPaidOverall)}
+              {formatMoney(totalPaidAgainstCharges)}
             </p>
           </div>
           <div className="rounded-lg border p-3">
@@ -219,15 +212,15 @@ export default async function ParentDetailPage({
                 </TableRow>
               )}
               {charges.map((charge) => {
-                const paid = charge.payments.reduce(
-                  (sum, p) => sum + Number(p.amount),
-                  0,
-                );
-                const remaining = Number(charge.amount) - paid;
+                const {
+                  paid,
+                  remaining,
+                  status: statusCode,
+                } = computeChargeSummary(charge);
                 const status =
-                  remaining <= 0
+                  statusCode === "PAID"
                     ? "Ödendi"
-                    : paid > 0
+                    : statusCode === "PARTIAL"
                       ? "Kısmi Ödendi"
                       : "Bekliyor";
                 return (

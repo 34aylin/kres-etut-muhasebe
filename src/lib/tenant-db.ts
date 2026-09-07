@@ -91,3 +91,33 @@ export function forTenant(tenantId: string) {
 }
 
 export type TenantPrismaClient = ReturnType<typeof forTenant>;
+
+/**
+ * Bir modele referans veren bir ID'nin (örn. formdan gelen `parentId`,
+ * `accountId`) gerçekten bu tenant'a ait olduğunu doğrular.
+ *
+ * ÖNEMLİ: `forTenant()` yalnızca bir sorgunun KENDİ `where`/`data` alanına
+ * `tenantId` ekler; `include` ile çekilen ilişkili kayıtları veya bir
+ * create/update payload'ında başka bir modele verilen yabancı anahtar
+ * (foreign key) değerlerinin o tenant'a ait olup olmadığını KONTROL ETMEZ.
+ * Bu yüzden istemciden gelen ve başka bir modele referans veren her ID,
+ * kullanılmadan önce bu fonksiyonla (ya da eşdeğer bir `findUnique`
+ * kontrolüyle) doğrulanmalıdır — aksi halde bir tenant, ID'sini bildiği
+ * (veya tahmin ettiği) başka bir tenant'ın kaydını kendi verisine
+ * bağlayıp o kaydın alanlarını (`include` üzerinden) görüntüleyebilir.
+ */
+export async function assertOwnedByTenant(
+  db: TenantPrismaClient,
+  model: "student" | "parent" | "account" | "category",
+  id: string,
+  message = "Geçersiz veya bu şubeye ait olmayan kayıt.",
+) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const record = await (db as any)[model].findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!record) {
+    throw new Error(message);
+  }
+}

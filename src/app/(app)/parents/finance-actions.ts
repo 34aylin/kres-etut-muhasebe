@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
-import { forTenant } from "@/lib/tenant-db";
+import { assertOwnedByTenant, forTenant } from "@/lib/tenant-db";
 import { canManageRecords } from "@/lib/roles";
 import {
   feePlanSchema,
@@ -31,6 +31,22 @@ export async function createFeePlan(
   const user = await requireManager();
   const parsed = feePlanSchema.parse(values);
   const db = forTenant(user.tenantId);
+
+  await assertOwnedByTenant(db, "student", studentId, "Geçersiz öğrenci.");
+  await assertOwnedByTenant(
+    db,
+    "parent",
+    parsed.parentId,
+    "Geçersiz veli seçimi.",
+  );
+  if (parsed.categoryId) {
+    await assertOwnedByTenant(
+      db,
+      "category",
+      parsed.categoryId,
+      "Geçersiz kategori seçimi.",
+    );
+  }
 
   const startDate = new Date(parsed.startDate);
 
@@ -114,7 +130,25 @@ export async function recordPayment(
   const parsed = paymentSchema.parse(values);
   const db = forTenant(user.tenantId);
 
+  await assertOwnedByTenant(
+    db,
+    "account",
+    parsed.accountId,
+    "Geçersiz hesap seçimi.",
+  );
   const charge = await db.charge.findUniqueOrThrow({ where: { id: chargeId } });
+
+  const alreadyPaid = await db.transaction.aggregate({
+    where: { chargeId: charge.id, type: "INCOME" },
+    _sum: { amount: true },
+  });
+  const remaining =
+    Number(charge.amount) - Number(alreadyPaid._sum.amount ?? 0);
+  if (parsed.amount > remaining) {
+    throw new Error(
+      `Tutar kalan borçtan (${remaining.toFixed(2)} ₺) fazla olamaz.`,
+    );
+  }
 
   await db.transaction.create({
     data: {

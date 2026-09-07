@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
-import { forTenant } from "@/lib/tenant-db";
+import {
+  assertOwnedByTenant,
+  forTenant,
+  type TenantPrismaClient,
+} from "@/lib/tenant-db";
 import { canManageRecords } from "@/lib/roles";
 import {
   transactionSchema,
@@ -34,11 +38,56 @@ function toData(values: TransactionFormValues) {
   };
 }
 
+/**
+ * Forma göre seçilen hesap/kategori/öğrenci/veli ID'lerinin gerçekten bu
+ * tenant'a ait olduğunu doğrular. Aksi halde bir kullanıcı başka bir
+ * şubenin hesabına/velisine referans veren bir hareket oluşturabilir ve
+ * bu, hareket listesinde (`include`) o şubenin verisini sızdırabilir.
+ */
+async function assertReferencesOwnedByTenant(
+  db: TenantPrismaClient,
+  data: ReturnType<typeof toData>,
+) {
+  await assertOwnedByTenant(
+    db,
+    "account",
+    data.accountId,
+    "Geçersiz hesap seçimi.",
+  );
+  if (data.categoryId) {
+    await assertOwnedByTenant(
+      db,
+      "category",
+      data.categoryId,
+      "Geçersiz kategori seçimi.",
+    );
+  }
+  if (data.studentId) {
+    await assertOwnedByTenant(
+      db,
+      "student",
+      data.studentId,
+      "Geçersiz öğrenci seçimi.",
+    );
+  }
+  if (data.parentId) {
+    await assertOwnedByTenant(
+      db,
+      "parent",
+      data.parentId,
+      "Geçersiz veli seçimi.",
+    );
+  }
+}
+
 export async function createTransaction(values: TransactionFormValues) {
   const user = await requireManager();
+  const db = forTenant(user.tenantId);
+  const data = toData(values);
+  await assertReferencesOwnedByTenant(db, data);
 
-  await forTenant(user.tenantId).transaction.create({
-    data: { ...toData(values), tenantId: user.tenantId },
+  await db.transaction.create({
+    data: { ...data, tenantId: user.tenantId },
   });
 
   revalidatePath("/transactions");
@@ -50,10 +99,13 @@ export async function updateTransaction(
   values: TransactionFormValues,
 ) {
   const user = await requireManager();
+  const db = forTenant(user.tenantId);
+  const data = toData(values);
+  await assertReferencesOwnedByTenant(db, data);
 
-  await forTenant(user.tenantId).transaction.update({
+  await db.transaction.update({
     where: { id },
-    data: toData(values),
+    data,
   });
 
   revalidatePath("/transactions");

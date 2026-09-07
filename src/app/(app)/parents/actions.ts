@@ -54,8 +54,22 @@ export async function updateParent(id: string, values: ParentFormValues) {
 
 export async function deleteParent(id: string) {
   const user = await requireManager();
+  const db = forTenant(user.tenantId);
 
-  await forTenant(user.tenantId).parent.delete({
+  // Charge/FeePlan modelleri Parent üzerinden Cascade silinir; bu veliye ait
+  // borç/plan kaydı varsa (tahsilat görmüş olsun ya da olmasın) sessizce yok
+  // olmasın diye önce elle kaldırılmasını zorunlu kılıyoruz.
+  const [chargeCount, feePlanCount] = await Promise.all([
+    db.charge.count({ where: { parentId: id } }),
+    db.feePlan.count({ where: { parentId: id } }),
+  ]);
+  if (chargeCount > 0 || feePlanCount > 0) {
+    throw new Error(
+      "Bu veliye ait borç/ücret planı kayıtları var; önce onları kaldırın.",
+    );
+  }
+
+  await db.parent.delete({
     where: { id },
   });
 

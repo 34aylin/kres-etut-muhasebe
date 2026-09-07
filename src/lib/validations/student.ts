@@ -11,3 +11,11 @@ export const studentSchema = z.object({
 });
 
 export type StudentFormValues = z.infer<typeof studentSchema>;
+
+export const parentLinkSchema = z.object({
+  studentId: z.string().min(1, "Öğrenci zorunludur"),
+  parentId: z.string().min(1, "Veli zorunludur"),
+  relation: z.string().max(50).optional().or(z.literal("")),
+});
+
+export type ParentLinkValues = z.infer<typeof parentLinkSchema>;

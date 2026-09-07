@@ -3,9 +3,10 @@
 import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
-import { forTenant } from "@/lib/tenant-db";
+import { assertOwnedByTenant, forTenant } from "@/lib/tenant-db";
 import { canManageRecords } from "@/lib/roles";
 import {
+  parentLinkSchema,
   studentSchema,
   type StudentFormValues,
 } from "@/lib/validations/student";
@@ -42,6 +43,17 @@ export async function createStudent(values: StudentFormValues) {
   });
 
   if (parsed.parentIds.length > 0) {
+    // Her parentId'nin bu tenant'a ait gerçek bir Parent kaydı olduğunu
+    // doğrula — aksi halde başka bir şubenin velisi bağlanabilir.
+    for (const parentId of parsed.parentIds) {
+      await assertOwnedByTenant(
+        db,
+        "parent",
+        parentId,
+        "Geçersiz veli seçimi.",
+      );
+    }
+
     await db.studentParent.createMany({
       data: parsed.parentIds.map((parentId) => ({
         studentId: student.id,
@@ -71,8 +83,22 @@ export async function updateStudent(id: string, values: StudentFormValues) {
 
 export async function deleteStudent(id: string) {
   const user = await requireManager();
+  const db = forTenant(user.tenantId);
 
-  await forTenant(user.tenantId).student.delete({
+  // Charge/FeePlan modelleri Student üzerinden de Cascade silinir; bu
+  // öğrenciye ait borç/plan kaydı varsa sessizce yok olmasın diye önce
+  // elle kaldırılmasını zorunlu kılıyoruz.
+  const [chargeCount, feePlanCount] = await Promise.all([
+    db.charge.count({ where: { studentId: id } }),
+    db.feePlan.count({ where: { studentId: id } }),
+  ]);
+  if (chargeCount > 0 || feePlanCount > 0) {
+    throw new Error(
+      "Bu öğrenciye ait borç/ücret planı kayıtları var; önce onları kaldırın.",
+    );
+  }
+
+  await db.student.delete({
     where: { id },
   });
 
@@ -85,17 +111,32 @@ export async function addParentLink(
   relation?: string,
 ) {
   const user = await requireManager();
+  const {
+    studentId: validStudentId,
+    parentId: validParentId,
+    relation: validRelation,
+  } = parentLinkSchema.parse({ studentId, parentId, relation });
+  const db = forTenant(user.tenantId);
 
-  await forTenant(user.tenantId).studentParent.create({
+  // Hem öğrencinin hem de velinin bu tenant'a ait olduğunu doğrula.
+  await assertOwnedByTenant(db, "student", validStudentId, "Geçersiz öğrenci.");
+  await assertOwnedByTenant(
+    db,
+    "parent",
+    validParentId,
+    "Geçersiz veli seçimi.",
+  );
+
+  await db.studentParent.create({
     data: {
-      studentId,
-      parentId,
-      relation: relation || null,
+      studentId: validStudentId,
+      parentId: validParentId,
+      relation: validRelation || null,
       tenantId: user.tenantId,
     },
   });
 
-  revalidatePath(`/students/${studentId}`);
+  revalidatePath(`/students/${validStudentId}`);
 }
 
 export async function removeParentLink(
@@ -117,8 +158,11 @@ export async function createEnrollment(
 ) {
   const user = await requireManager();
   const parsed = enrollmentSchema.parse(values);
+  const db = forTenant(user.tenantId);
 
-  await forTenant(user.tenantId).enrollment.create({
+  await assertOwnedByTenant(db, "student", studentId, "Geçersiz öğrenci.");
+
+  await db.enrollment.create({
     data: {
       studentId,
       program: parsed.program,
