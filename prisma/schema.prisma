@@ -1,0 +1,160 @@
+// Kreş & Etüt Merkezi Muhasebe — Faz 1: Veri Modeli ve Kimlik Doğrulama
+// https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Multi-tenant kök varlık: her kreş/etüt şubesi bir Tenant'tır.
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users       User[]
+  parents     Parent[]
+  students    Student[]
+  enrollments Enrollment[]
+  auditLogs   AuditLog[]
+
+  @@map("tenants")
+}
+
+enum UserRole {
+  ADMIN
+  ACCOUNTANT
+  TEACHER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  email        String
+  passwordHash String
+  role         UserRole @default(TEACHER)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  auditLogs AuditLog[]
+
+  // Email global olarak benzersizdir: bir kullanıcı hesabı tek bir tenant'a
+  // aittir ve girişte tenant seçimine gerek kalmaz (email + şifre yeterli).
+  @@unique([email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+model Parent {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  firstName  String
+  lastName   String
+  phone      String?
+  email      String?
+  nationalId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  students StudentParent[]
+
+  @@index([tenantId])
+  @@map("parents")
+}
+
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+  GRADUATED
+}
+
+model Student {
+  id        String        @id @default(cuid())
+  tenantId  String
+  tenant    Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  firstName String
+  lastName  String
+  birthDate DateTime?
+  status    StudentStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  parents     StudentParent[]
+  enrollments Enrollment[]
+
+  @@index([tenantId])
+  @@map("students")
+}
+
+enum ProgramType {
+  KRES
+  ETUT
+}
+
+/// Öğrencinin bir programa (kreş/etüt) kaydı: hangi tarihte başladığı ve durumu.
+model Enrollment {
+  id        String        @id @default(cuid())
+  tenantId  String
+  tenant    Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  program   ProgramType
+  startDate DateTime
+  endDate   DateTime?
+  status    StudentStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([tenantId])
+  @@index([studentId])
+  @@map("enrollments")
+}
+
+/// Öğrenci-Veli çoktan çoğa ilişkisi (kardeş / birden fazla veli desteği).
+model StudentParent {
+  id        String  @id @default(cuid())
+  tenantId  String
+  studentId String
+  parentId  String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  parent    Parent  @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  relation  String? // örn. "anne", "baba", "vasi"
+
+  @@unique([studentId, parentId])
+  @@index([tenantId])
+  @@map("student_parents")
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+}
+
+/// Kritik işlemlerin izlenebilirliği (Faz 5'te genişletilecek).
+model AuditLog {
+  id         String      @id @default(cuid())
+  tenantId   String
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     AuditAction
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime    @default(now())
+
+  @@index([tenantId])
+  @@map("audit_logs")
+}

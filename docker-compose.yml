@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-kres_etut_muhasebe}
+    ports:
+      # Host tarafında 5432 başka bir Postgres tarafından kullanılıyor olabileceğinden
+      # 5433'e map edilir. Container-içi bağlantılar (app -> postgres) her zaman 5432 kullanır.
+      - "${POSTGRES_HOST_PORT:-5544}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-kres_etut_muhasebe}?schema=public
+      AUTH_SECRET: ${AUTH_SECRET}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+    ports:
+      # Host tarafında 3000 başka bir uygulama tarafından kullanılıyor olabileceğinden
+      # APP_HOST_PORT ile değiştirilebilir. Container-içi port her zaman 3000'dir.
+      - "${APP_HOST_PORT:-3000}:3000"
+
+volumes:
+  postgres_data:
