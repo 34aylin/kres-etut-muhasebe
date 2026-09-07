@@ -5,8 +5,8 @@ Kreş ve etüt merkezleri için gelir/gider, veli/öğrenci ve temel muhasebe he
 
 Proje planı: `kres-etut-muhasebe-plan.md`. Bu doküman **Faz 0** (proje kurulumu), **Faz 1**
 (veri modeli ve kimlik doğrulama), **Faz 2** (veli/öğrenci yönetimi), **Faz 3** (hesap planı
-ve gelir/gider modülü) ve **Faz 4** (raporlama ve dashboard) kapsamında oluşturulan altyapıyı
-açıklar.
+ve gelir/gider modülü), **Faz 4** (raporlama ve dashboard) ve **Faz 5** (güvenlik
+sertleştirme ve test) kapsamında oluşturulan altyapıyı açıklar.
 
 ## Gereksinimler
 
@@ -95,6 +95,17 @@ tahsilat/ödeme) ayrı kavramlardır. `FeePlan` bir taksit planı tanımlar ve o
   Sadece ADMIN ve ACCOUNTANT erişebilir (hem sayfa hem `/api/reports/*` uç noktaları sunucu
   tarafında da bu kısıtı zorunlu kılar).
 
+## Ekranlar / Özellikler (Faz 5)
+
+- **Brute-force koruması:** Bir hesaba 5 kez yanlış şifre girilirse hesap 15 dakika kilitlenir
+  (`User.failedLoginAttempts` / `lockedUntil`, bkz. `src/lib/login-attempts.ts`). Kullanıcı
+  sayısı taraması (enumeration) riskini azaltmak için kilitliyken de aynı genel "e-posta veya
+  şifre hatalı" mesajı gösterilir. ADMIN, Yönetici Paneli'nde kilitli hesapları görüp **Kilidi
+  Aç** ile manuel açabilir.
+- **`/admin/audit`** — Denetim kaydı (ADMIN-only): kayıt oluşturma/silme, tutar değişikliği ve
+  girişler gibi kritik işlemler `AuditLog`'a yazılır (`src/lib/audit.ts`), bu ekranda aksiyon
+  ve varlık türüne göre filtrelenip sayfalanarak görüntülenir.
+
 ## Güvenlik Notları
 
 Faz 3 sonrasında yapılan bir güvenlik incelemesinde, `forTenant()`'ın yalnızca bir sorgunun
@@ -106,13 +117,24 @@ veriyordu. `src/lib/tenant-db.ts` içindeki `assertOwnedByTenant()` ile kapatıl
 Yeni bir server action yazarken, istemciden gelen ve başka bir modele referans veren her ID
 kullanılmadan önce bu fonksiyonla doğrulanmalıdır.
 
+Faz 5'te ayrıca: girdi doğrulama şemaları sıkılaştırıldı (TC Kimlik No formatı, telefon
+formatı, tutar üst sınırları), `npm audit` ile bağımlılık taraması yapıldı (kırılmayan
+düzeltmeler uygulandı; Prisma'yı büyük bir sürüm geriye almayı gerektiren düzeltmeler bilinçli
+olarak atlandı çünkü etkilenen paketler yalnızca Prisma CLI'nin build-zamanı araçlarında ve
+kullanmadığımız bir veritabanı sürücüsünde — bkz. commit mesajı), ve RBAC/tenant izolasyonu
+için gerçek server action'ları çağıran entegrasyon testleri eklendi.
+
 ## Test Kapsamı
 
-`npm run test` ile çalışan testler: şifre hash'leme, rol yetkilendirmesi, borç hesaplama
-mantığı (`src/lib/debt.ts`), rapor hesaplamaları (`src/lib/reports.ts`), CSV üretimi ve
-**gerçek bir veritabanına karşı çalışan multi-tenant izolasyon testi**
-(`src/lib/tenant-db.test.ts` — bu testin çalışması için `DATABASE_URL`'in erişilebilir bir
-Postgres'e işaret etmesi gerekir, örn. `docker compose up -d postgres`).
+`npm run test` ile çalışan testler: şifre hash'leme, rol yetkilendirmesi, giriş kilitleme
+mantığı (`src/lib/login-attempts.ts`), borç hesaplama mantığı (`src/lib/debt.ts`), rapor
+hesaplamaları (`src/lib/reports.ts`), CSV üretimi, **gerçek bir veritabanına karşı çalışan
+multi-tenant izolasyon testi** (`src/lib/tenant-db.test.ts`) ve **RBAC/cross-tenant IDOR
+regresyon testleri** (`src/app/(app)/parents/actions.test.ts`,
+`src/app/(app)/students/actions.test.ts` — gerçek server action'ları mock'lanmış bir
+oturumla çağırıp TEACHER'ın veli oluşturamadığını ve başka bir tenant'ın kaydına referans
+verilemeyeceğini doğrular). Bu testlerin çalışması için `DATABASE_URL`'in erişilebilir bir
+Postgres'e işaret etmesi gerekir, örn. `docker compose up -d postgres`.
 
 | Komut                | Açıklama                                             |
 | -------------------- | ---------------------------------------------------- |
@@ -144,8 +166,8 @@ Postgres'e işaret etmesi gerekir, örn. `docker compose up -d postgres`).
 
 ## Kapsam Dışı (sonraki fazlar)
 
-Güvenlik sertleştirme — rate limiting, brute-force koruması, audit log ekranı (Faz 5),
-production Docker paketleme (Faz 6) — detaylar için `kres-etut-muhasebe-plan.md`.
+Production Docker paketleme — çok aşamalı (multi-stage) build, healthcheck, otomatik yedekleme
+(Faz 6) — detaylar için `kres-etut-muhasebe-plan.md`.
 
 Not: Faz 4'teki "şube bazlı kırılım" maddesi kapsam dışı bırakıldı — sistemde her ADMIN
 sadece kendi şubesini yönetir, çapraz-şube karşılaştırma yapacak bir platform/süper-admin
