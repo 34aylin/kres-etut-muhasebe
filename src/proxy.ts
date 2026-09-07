@@ -34,5 +34,9 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!api/auth|_next/static|_next/image|favicon.ico).*)"],
+  // /api/health kasıtlı olarak hariç tutulur: Docker HEALTHCHECK ve
+  // orkestrasyon araçlarının kimlik doğrulamadan erişebilmesi gerekir.
+  matcher: [
+    "/((?!api/auth|api/health|_next/static|_next/image|favicon.ico).*)",
+  ],
 };

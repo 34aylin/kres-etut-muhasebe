@@ -19,6 +19,12 @@ const credentialsSchema = z.object({
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
+  // Self-hosted bir dağıtımız: sunucunun kendi (genellikle bilinmeyen/
+  // değişken) host adı/portu üzerinden erişileceğinden Auth.js'in
+  // production'da varsayılan olarak yaptığı katı host doğrulamasını
+  // (UntrustedHost hatası) devre dışı bırakıyoruz. Uygulama zaten
+  // reverse proxy olmadan doğrudan Docker Compose ile yayınlanıyor.
+  trustHost: true,
   providers: [
     Credentials({
       credentials: {

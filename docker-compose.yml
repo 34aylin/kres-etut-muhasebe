@@ -17,6 +17,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   app:
     build:
@@ -34,6 +39,48 @@ services:
       # Host tarafında 3000 başka bir uygulama tarafından kullanılıyor olabileceğinden
       # APP_HOST_PORT ile değiştirilebilir. Container-içi port her zaman 3000'dir.
       - "${APP_HOST_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Günlük otomatik Postgres yedeklemesi (pg_dump + gzip, cron ile).
+  # Container başlar başlamaz bir kez, sonrasında her gün 03:00'te çalışır.
+  # Yedekler `postgres_backups` volume'ünde tutulur (varsayılan 7 gün saklanır).
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-kres_etut_muhasebe}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    volumes:
+      - ./scripts:/scripts:ro
+      - postgres_backups:/backups
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        echo "0 3 * * * sh /scripts/backup.sh >> /proc/1/fd/1 2>&1" > /etc/crontabs/root
+        sh /scripts/backup.sh
+        crond -f -d 8
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   postgres_data:
+  postgres_backups:

@@ -5,25 +5,39 @@ Kreş ve etüt merkezleri için gelir/gider, veli/öğrenci ve temel muhasebe he
 
 Proje planı: `kres-etut-muhasebe-plan.md`. Bu doküman **Faz 0** (proje kurulumu), **Faz 1**
 (veri modeli ve kimlik doğrulama), **Faz 2** (veli/öğrenci yönetimi), **Faz 3** (hesap planı
-ve gelir/gider modülü), **Faz 4** (raporlama ve dashboard) ve **Faz 5** (güvenlik
-sertleştirme ve test) kapsamında oluşturulan altyapıyı açıklar.
+ve gelir/gider modülü), **Faz 4** (raporlama ve dashboard), **Faz 5** (güvenlik sertleştirme
+ve test) ve **Faz 6** (production Docker paketleme) kapsamında oluşturulan altyapıyı açıklar.
 
 ## Gereksinimler
 
 - Node.js **22.x** (Prisma 7, Node 23 gibi tek numaralı sürümleri desteklemez — bkz. `.nvmrc`)
+  — sadece yerel geliştirme/seed için gerekir, Docker ile çalıştırmak için gerekmez.
 - Docker + Docker Compose
 
-## Hızlı Başlangıç (Docker ile)
+## Hızlı Başlangıç (Docker ile, production)
 
 ```bash
 cp .env.example .env
 # .env içindeki AUTH_SECRET değerini `openssl rand -base64 32` ile üretip değiştirin
 
-docker compose up -d --build
-docker compose exec app npx tsx prisma/seed.ts   # demo tenant/kullanıcı verisi
+docker compose up -d
 ```
 
-Uygulama http://localhost:3000 üzerinde açılır.
+Bu tek komut: Postgres'i ayağa kaldırır, çok aşamalı (multi-stage) production imajını inşa
+eder, container başında bekleyen migration'ları otomatik uygular (`prisma migrate deploy`),
+uygulamayı `next start` ile production modunda çalıştırır ve günlük otomatik yedeklemeyi
+başlatır (bkz. [Yedekleme](#yedekleme-backup)).
+
+Uygulama http://localhost:3000 üzerinde açılır. Sağlık kontrolü: `curl http://localhost:3000/api/health`.
+
+Demo/test verisi yüklemek isterseniz (bkz. [Demo Giriş Bilgileri](#demo-giriş-bilgileri)),
+host makinenizden (production imajı `tsx` içermez, bu yüzden seed **container içinde değil**
+host'tan çalıştırılır — bkz. [Yerel Geliştirme](#yerel-geliştirme-dockersız-sadece-postgres-containerla)):
+
+```bash
+npm install
+DATABASE_URL="postgresql://postgres:postgres@localhost:5544/kres_etut_muhasebe?schema=public" npm run db:seed
+```
 
 > Not: Host makinenizde 3000 veya 5432 portları başka bir servis tarafından kullanılıyorsa,
 > `docker-compose.yml` içindeki `POSTGRES_HOST_PORT` (varsayılan 5544) ve `app.ports`
@@ -106,6 +120,40 @@ tahsilat/ödeme) ayrı kavramlardır. `FeePlan` bir taksit planı tanımlar ve o
   girişler gibi kritik işlemler `AuditLog`'a yazılır (`src/lib/audit.ts`), bu ekranda aksiyon
   ve varlık türüne göre filtrelenip sayfalanarak görüntülenir.
 
+## Production Docker Paketleme (Faz 6)
+
+- **Çok aşamalı (multi-stage) `Dockerfile`:** `deps` (build için tüm bağımlılıklar) →
+  `builder` (`prisma generate` + `next build`) → `prod-deps` (sadece production
+  bağımlılıkları — `prisma` CLI, migration'ları çalıştırabilmek için artık bir
+  `devDependency` değil, gerçek bir `dependency`) → `runner` (build araçları içermeyen,
+  `nextjs` adında ayrıcalıksız bir kullanıcıyla çalışan son imaj). Container her
+  başladığında önce `prisma migrate deploy` çalışır, sonra `next start` (production modu,
+  `next dev` değil) başlar.
+- **Healthcheck:** `GET /api/health` — kimlik doğrulama gerektirmez (bkz. `src/proxy.ts`
+  matcher'ı), veritabanına gerçek bir `SELECT 1` sorgusu atarak sadece uygulamanın değil,
+  DB bağlantısının da ayakta olduğunu doğrular. Hem `Dockerfile`'daki `HEALTHCHECK`
+  hem de `docker-compose.yml`'daki `app.healthcheck` bunu kullanır — `docker ps` çıktısında
+  `(healthy)` olarak görünür.
+- **Log yönetimi:** Her iki servis de `json-file` log sürücüsünü `max-size: 10m, max-file: 3`
+  ile kullanır — loglar diskte sınırsız büyümez, en fazla ~30MB/servis tutulur. Uygulama
+  logları `docker compose logs -f app` ile izlenir.
+- **Yedekleme (backup):** `backup` servisi (`postgres:16-alpine` imajı, `scripts/backup.sh`)
+  container başladığında bir kez, sonrasında her gün 03:00'te (`crond`) otomatik
+  `pg_dump | gzip` yedeği alır ve `postgres_backups` volume'üne yazar; varsayılan olarak
+  7 günden eski yedekleri siler (`BACKUP_RETENTION_DAYS` ile değiştirilebilir). Elle yedek
+  almak: `docker compose exec backup sh /scripts/backup.sh`. Geri yüklemek:
+  ```bash
+  docker compose exec backup sh -c 'ls -t /backups/*.sql.gz | head -1'   # en son yedeği bul
+  docker compose exec backup sh /scripts/restore.sh /backups/<dosya>.sql.gz
+  ```
+  `pg_dump --clean --if-exists` kullanıldığı için restore, veritabanı boş olsun ya da dolu
+  olsun (tablolar zaten var olsun) sorunsuz çalışır — hem "şemayı tamamen sildim" hem de
+  "üzerine yaz" senaryoları test edilip doğrulandı.
+- **`trustHost: true` (Auth.js):** Self-hosted bir dağıtım, sabit/bilinen bir host adı
+  garanti edilemeyeceğinden production modda Auth.js'in varsayılan katı host doğrulamasını
+  (`UntrustedHost` hatası — sadece `next start` ile ortaya çıkar, `next dev`'de görülmez)
+  devre dışı bırakır.
+
 ## Güvenlik Notları
 
 Faz 3 sonrasında yapılan bir güvenlik incelemesinde, `forTenant()`'ın yalnızca bir sorgunun
@@ -164,11 +212,18 @@ Postgres'e işaret etmesi gerekir, örn. `docker compose up -d postgres`.
   `@prisma/adapter-pg` driver adapter kullanır; schema dosyasında `datasource.url` artık
   desteklenmez.
 
-## Kapsam Dışı (sonraki fazlar)
+## Durum
 
-Production Docker paketleme — çok aşamalı (multi-stage) build, healthcheck, otomatik yedekleme
-(Faz 6) — detaylar için `kres-etut-muhasebe-plan.md`.
+Plandaki 6 fazın tamamı (Faz 0-6) tamamlandı. **Faz 7 — Opsiyonel/Gelecek Genişletmeler**
+(online ödeme entegrasyonu, e-fatura, veli portalı, e-posta/SMS bildirimleri, PWA) kapsam
+dışıdır; detaylar için `kres-etut-muhasebe-plan.md`.
 
-Not: Faz 4'teki "şube bazlı kırılım" maddesi kapsam dışı bırakıldı — sistemde her ADMIN
-sadece kendi şubesini yönetir, çapraz-şube karşılaştırma yapacak bir platform/süper-admin
-rolü şu an tanımlı değil.
+Bilinen kapsam kararları:
+
+- Faz 4'teki "şube bazlı kırılım" maddesi eklenmedi — sistemde her ADMIN sadece kendi
+  şubesini yönetir, çapraz-şube karşılaştırma yapacak bir platform/süper-admin rolü şu an
+  tanımlı değil.
+- Yeni bir şube (tenant) veya personel hesabı oluşturmanın UI'dan bir yolu yok — bunlar şu an
+  yalnızca `prisma/seed.ts` veya doğrudan veritabanı erişimiyle oluşturulabiliyor. Hiçbir
+  fazda "şube/kullanıcı onboarding ekranı" açıkça talep edilmedi; gerçek bir üretim
+  dağıtımında bu erken bir öncelik olmalı.
