@@ -13,15 +13,15 @@ const prisma = new PrismaClient({ adapter });
 const DEMO_PASSWORD = "Demo1234!";
 
 const TENANTS = [
-  { slug: "merkez-sube", name: "Merkez Şube Kreş & Etüt" },
-  { slug: "yildiz-sube", name: "Yıldız Şube Kreş & Etüt" },
+  { slug: "merkez-sube", name: "Merkez Şube Kreş", type: "KRES" as const },
+  { slug: "yildiz-sube", name: "Yıldız Şube Etüt", type: "ETUT" as const },
 ] as const;
 
 async function seedTenant(tenant: (typeof TENANTS)[number]) {
   const createdTenant = await prisma.tenant.upsert({
     where: { slug: tenant.slug },
-    update: {},
-    create: { slug: tenant.slug, name: tenant.name },
+    update: { name: tenant.name, type: tenant.type },
+    create: { slug: tenant.slug, name: tenant.name, type: tenant.type },
   });
 
   const passwordHash = await hashPassword(DEMO_PASSWORD);
@@ -199,10 +199,24 @@ async function seedTenant(tenant: (typeof TENANTS)[number]) {
   console.log(`Seed tamamlandı: ${tenant.slug}`);
 }
 
+async function seedPlatformAdmin() {
+  const passwordHash = await hashPassword(DEMO_PASSWORD);
+  await prisma.platformAdmin.upsert({
+    where: { email: "platform@admin.test" },
+    update: {},
+    create: {
+      email: "platform@admin.test",
+      name: "Platform Yöneticisi",
+      passwordHash,
+    },
+  });
+}
+
 async function main() {
   for (const tenant of TENANTS) {
     await seedTenant(tenant);
   }
+  await seedPlatformAdmin();
 
   console.log("\nDemo giriş bilgileri (tüm kullanıcılar için şifre aynıdır):");
   console.log(`  Şifre: ${DEMO_PASSWORD}`);
@@ -211,6 +225,7 @@ async function main() {
       `  [${tenant.slug}] yonetici@${tenant.slug}.test / muhasebe@${tenant.slug}.test / ogretmen@${tenant.slug}.test`,
     );
   }
+  console.log("  [platform admin] platform@admin.test (/admin adresinden)");
 }
 
 main()

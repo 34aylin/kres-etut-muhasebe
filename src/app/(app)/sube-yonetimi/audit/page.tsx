@@ -67,7 +67,7 @@ export default async function AuditLogPage({
   return (
     <div className="space-y-4">
       <div>
-        <Link href="/admin" className="text-sm text-muted-foreground underline">
+        <Link href="/sube-yonetimi" className="text-sm text-muted-foreground underline">
           ← Yönetici Paneline dön
         </Link>
       </div>

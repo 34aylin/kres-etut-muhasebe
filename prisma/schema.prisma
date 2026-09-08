@@ -10,13 +10,21 @@ datasource db {
   provider = "postgresql"
 }
 
+enum TenantType {
+  KRES
+  ETUT
+}
+
 /// Multi-tenant kök varlık: her kreş/etüt şubesi bir Tenant'tır.
 model Tenant {
-  id        String   @id @default(cuid())
+  id        String     @id @default(cuid())
   name      String
-  slug      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  slug      String     @unique
+  /// Şubenin işletme türü — Kreş Yönetimi / Etüt Yönetimi. Uygulama genelinde
+  /// etiket/terminoloji ve kayıt akışı bu alana göre şekillenir.
+  type      TenantType @default(KRES)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
   users        User[]
   parents      Parent[]
@@ -297,6 +305,24 @@ enum AuditAction {
   UPDATE
   DELETE
   LOGIN
+}
+
+// ---------------------------------------------------------------------------
+// Platform Yönetimi — tenant'lardan tamamen bağımsız üst-seviye hesaplar.
+// Bu model kasıtlı olarak Tenant'a bağlı değildir ve `forTenant()` tenant
+// izolasyonunun (src/lib/tenant-db.ts) kapsamına girmez.
+// ---------------------------------------------------------------------------
+
+model PlatformAdmin {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("platform_admins")
 }
 
 /// Kritik işlemlerin izlenebilirliği (Faz 5'te genişletilecek).

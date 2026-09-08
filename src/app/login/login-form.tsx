@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 const loginSchema = z.object({
   email: z
@@ -28,10 +29,21 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-export function LoginForm() {
+export function LoginForm({
+  expectedType,
+  title,
+  description,
+  mismatchMessage,
+}: {
+  expectedType: "KRES" | "ETUT";
+  title: string;
+  description: string;
+  mismatchMessage: string;
+}) {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/";
   const [formError, setFormError] = useState<string | null>(null);
+  const isKres = expectedType === "KRES";
 
   const {
     register,
@@ -46,11 +58,12 @@ export function LoginForm() {
     const result = await signIn("credentials", {
       email: values.email,
       password: values.password,
+      expectedType,
       redirect: false,
     });
 
     if (!result || result.error) {
-      setFormError("E-posta veya şifre hatalı.");
+      setFormError(mismatchMessage);
       return;
     }
 
@@ -63,12 +76,17 @@ export function LoginForm() {
   }
 
   return (
-    <Card className="w-full max-w-sm">
+    <Card
+      className={cn(
+        "w-full max-w-sm",
+        isKres && "border-2 border-dashed border-[#F3B23E]",
+      )}
+    >
       <CardHeader>
-        <CardTitle>Giriş Yap</CardTitle>
-        <CardDescription>
-          Kreş &amp; Etüt Merkezi Muhasebe Sistemi
-        </CardDescription>
+        <CardTitle className={cn(isKres && "font-heading")}>
+          {title}
+        </CardTitle>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
         <form

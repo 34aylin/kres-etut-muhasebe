@@ -29,7 +29,7 @@ export async function updateTenantName(name: string) {
     data: { name: parsed.name },
   });
 
-  revalidatePath("/admin/sube");
+  revalidatePath("/sube-yonetimi/sube");
 }
 
 export async function unlockUser(userId: string) {
@@ -53,5 +53,5 @@ export async function unlockUser(userId: string) {
     metadata: { reason: "manual_unlock" },
   });
 
-  revalidatePath("/admin");
+  revalidatePath("/sube-yonetimi");
 }

@@ -169,6 +169,7 @@ export default async function StudentDetailPage({
             <EnrollmentFormDialog
               mode="create"
               studentId={student.id}
+              tenantType={user.tenantType}
               trigger={
                 <Button size="sm" variant="outline">
                   <Plus className="size-4" />
@@ -225,6 +226,7 @@ export default async function StudentDetailPage({
                       <EnrollmentFormDialog
                         mode="edit"
                         studentId={student.id}
+                        tenantType={user.tenantType}
                         enrollmentId={enrollment.id}
                         defaultValues={{
                           program: enrollment.program,

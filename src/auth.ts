@@ -14,6 +14,9 @@ import {
 const credentialsSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  // Kullanıcının hangi giriş kapısını (Kreş/Etüt) seçtiği — kendi şubesinin
+  // türüyle eşleşmiyorsa girişe izin verilmez (bkz. aşağıdaki kontrol).
+  expectedType: z.enum(["KRES", "ETUT"]).optional(),
 });
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -34,7 +37,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       async authorize(rawCredentials) {
         const parsed = credentialsSchema.safeParse(rawCredentials);
         if (!parsed.success) return null;
-        const { email, password } = parsed.data;
+        const { email, password, expectedType } = parsed.data;
 
         // Kimlik doğrulama, giriş anında henüz bilinmeyen bir tenant'a
         // bağlı olamayacağından ham `prisma` client'ı ile global email
@@ -46,6 +49,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
 
         if (!user || !user.isActive) return null;
+
+        // Kullanıcı yanlış kapıdan (Kreş/Etüt) giriş yapmaya çalıştıysa
+        // reddedilir — enumeration riskini azaltmak için aynı genel
+        // "giriş başarısız" davranışı korunur, hangi türün beklendiği
+        // ayrıca belirtilmez.
+        if (expectedType && user.tenant.type !== expectedType) return null;
 
         // Hesap, çok sayıda başarısız denemeden sonra geçici olarak
         // kilitlenmiş olabilir. Kullanıcı sayısı taraması (enumeration)
@@ -79,6 +88,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           role: user.role,
           tenantId: user.tenantId,
           tenantSlug: user.tenant.slug,
+          tenantType: user.tenant.type,
         };
       },
     }),
@@ -90,6 +100,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.role = user.role;
         token.tenantId = user.tenantId;
         token.tenantSlug = user.tenantSlug;
+        token.tenantType = user.tenantType;
       }
       return token;
     },
@@ -98,6 +109,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.role = token.role;
       session.user.tenantId = token.tenantId;
       session.user.tenantSlug = token.tenantSlug;
+      session.user.tenantType = token.tenantType;
       return session;
     },
   },

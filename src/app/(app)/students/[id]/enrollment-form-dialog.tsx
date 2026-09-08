@@ -26,18 +26,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PROGRAM_TYPE_LABELS, STUDENT_STATUS_LABELS } from "@/lib/labels";
+import { TENANT_TYPE_TO_PROGRAM } from "@/lib/tenant-type";
 import {
   enrollmentSchema,
   enrollmentStatusValues,
-  programTypeValues,
   type EnrollmentFormValues,
 } from "@/lib/validations/enrollment";
 import { createEnrollment, updateEnrollment } from "../actions";
+import type { TenantType } from "@/generated/prisma/client";
 
 type EnrollmentFormDialogProps = {
   mode: "create" | "edit";
   studentId: string;
   enrollmentId?: string;
+  tenantType: TenantType;
   defaultValues?: EnrollmentFormValues;
   trigger: React.ReactElement;
 };
@@ -46,12 +48,17 @@ export function EnrollmentFormDialog({
   mode,
   studentId,
   enrollmentId,
+  tenantType,
   defaultValues,
   trigger,
 }: EnrollmentFormDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  // Bir tenant tek bir işletme türü altında çalışır (Kreş ya da Etüt), bu
+  // yüzden program tenant türünden otomatik türetilir ve kullanıcıya
+  // sorulmaz (bkz. src/lib/tenant-type.ts).
+  const derivedProgram = TENANT_TYPE_TO_PROGRAM[tenantType];
 
   const {
     register,
@@ -63,14 +70,13 @@ export function EnrollmentFormDialog({
   } = useForm<EnrollmentFormValues>({
     resolver: zodResolver(enrollmentSchema),
     defaultValues: defaultValues ?? {
-      program: "KRES",
+      program: derivedProgram,
       startDate: "",
       endDate: "",
       status: "ACTIVE",
     },
   });
 
-  const program = watch("program");
   const status = watch("status");
 
   function onSubmit(values: EnrollmentFormValues) {
@@ -109,25 +115,12 @@ export function EnrollmentFormDialog({
           onSubmit={handleSubmit(onSubmit)}
           noValidate
         >
-          <div className="space-y-2">
-            <Label htmlFor="program">Program</Label>
-            <Select
-              value={program}
-              onValueChange={(value) =>
-                setValue("program", value as EnrollmentFormValues["program"])
-              }
-            >
-              <SelectTrigger id="program">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {programTypeValues.map((value) => (
-                  <SelectItem key={value} value={value}>
-                    {PROGRAM_TYPE_LABELS[value]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <input type="hidden" {...register("program")} defaultValue={derivedProgram} />
+          <div className="space-y-1">
+            <Label>Program</Label>
+            <p className="text-sm text-muted-foreground">
+              {PROGRAM_TYPE_LABELS[derivedProgram]} (şube türüne göre otomatik)
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">

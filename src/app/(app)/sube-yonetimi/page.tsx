@@ -42,10 +42,10 @@ export default async function AdminPage() {
           doğrulaması).
         </CardDescription>
         <div className="flex gap-4">
-          <Link href="/admin/sube" className="text-sm text-primary underline">
+          <Link href="/sube-yonetimi/sube" className="text-sm text-primary underline">
             Şube ayarlarını düzenle →
           </Link>
-          <Link href="/admin/audit" className="text-sm text-primary underline">
+          <Link href="/sube-yonetimi/audit" className="text-sm text-primary underline">
             Denetim kaydını görüntüle →
           </Link>
         </div>
